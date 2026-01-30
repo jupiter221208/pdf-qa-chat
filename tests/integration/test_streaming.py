@@ -58,15 +58,12 @@ startxref
 474
 %%EOF"""
 
-    try:
-        metadata, text = PDFParser.parse("test.pdf", pdf_content)
-        check.equal(metadata.filename, "test.pdf")
-        check.equal(metadata.pages, 1)
-        check.equal(metadata.size_bytes, len(pdf_content))
-        check.greater(metadata.text_length, 0)
-    except ValueError as e:
-        # Expected if PDF parsing fails on invalid structure
-        pytest.skip(f"PDF parsing not fully compatible: {e}")
+    # Parse must succeed; do not hide failures with skip
+    metadata, text = PDFParser.parse("test.pdf", pdf_content)
+    check.equal(metadata.filename, "test.pdf")
+    check.equal(metadata.pages, 1)
+    check.equal(metadata.size_bytes, len(pdf_content))
+    check.greater(metadata.text_length, 0)
 
 
 @pytest.mark.integration
@@ -113,8 +110,7 @@ def test_agent_streaming(monkeypatch):
             f"test_agent_streaming timed out after {API_TIMEOUT_SECONDS}s. "
             "Check network and OpenAI API."
         )
-    except Exception as e:
-        pytest.skip(f"Agent streaming test skipped: {e}")
+    # Do not catch other exceptions: let test fail loudly
 
 
 @pytest.mark.integration
