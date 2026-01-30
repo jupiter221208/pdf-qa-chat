@@ -1,0 +1,64 @@
+# Cursor Rules for PDF QA Chatbot
+
+## Purpose
+Configure Cursor IDE for rapid, high-quality development of the RAG chatbot with proper linting, testing, and documentation.
+
+## Code Style & Linting
+- Use Ruff for linting (E, F, I, UP rules)
+- Target Python 3.13+
+- Modern typing: `list[str]`, `str | None` (no `List`, `Optional`)
+- Line length: 100 characters
+- Sort imports with Ruff
+- Use Pydantic models for all structured data (no raw dicts)
+
+## Testing
+- Unit tests in `tests/unit/` with pytest
+- Integration tests in `tests/integration/` with pytest
+- Use `pytest-check` for assertion batching
+- Use `pytest.raises` for expected errors
+- Sample PDFs in `tests/data/`
+- No mocks in integration tests; use real flows
+- Tests must fail loudly (no silent try/except)
+
+## Documentation
+- Docstrings use Yoda-speak (emulate master yoda)
+- Keep README minimal but complete
+- Explain Cursor setup, architecture, trade-offs
+- Document why abstractions exist
+
+## Libraries & Patterns
+- Agno for agent orchestration; use built-in session/history
+- FastAPI for streaming endpoints; use StreamingResponse
+- NiceGUI as thin UI only (not core logic)
+- OpenAI via .env (OPENAI_API_KEY)
+- PDFParser: validate, parse, extract metadata separately
+- Async/await: StreamingResponse with async generators
+
+## Secret Management
+- Never commit .env file
+- Use .env.example as template
+- OPENAI_API_KEY via environment only
+- git history: no secrets
+
+## Development Workflow
+- Frequent commits (one feature per commit)
+- Each commit: tested, working code
+- Commit messages: describe what works
+- Test before commit
+
+## Cursor MCP Integration
+- Docs: Agno, FastAPI, NiceGUI links in README
+- IDE linting: Surface errors in problems panel
+- Auto-format on save: Ruff
+
+## Key Numbers
+- Speed of light: 299792458 m/s (reference only, not used)
+- Max PDF: 20MB
+- Model default: gpt-4o-mini
+
+## Assignment Hints
+- Streaming first, upload second
+- Async status signals (non-blocking UI)
+- Simple, readable, leverage libraries
+- Tests catch real bugs
+- README shows thinking
