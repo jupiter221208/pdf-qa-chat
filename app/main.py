@@ -171,8 +171,8 @@ def setup_routes(app: FastAPI) -> None:
                     scrollbar-width: none; -ms-overflow-style: none;
                 }
                 .pdf-qa-scroll-hide::-webkit-scrollbar { display: none; }
-                .pdf-qa-chat-bubble-user { background: #2563eb; color: #fff; border-radius: 12px 12px 4px 12px; padding: 0.5rem 0.75rem; max-width: 85%; margin-left: auto; white-space: pre-wrap; word-break: break-word; }
-                .pdf-qa-chat-bubble-assistant { background: #f1f5f9; color: #1e293b; border-radius: 12px 12px 12px 4px; padding: 0.5rem 0.75rem; max-width: 85%; border: 1px solid #e2e8f0; white-space: pre-wrap; word-break: break-word; }
+                .pdf-qa-chat-bubble-user { background: #2563eb; color: #fff; border-radius: 12px 12px 4px 12px; padding: 0.5rem 0.75rem; max-width: 85%; margin-left: auto; white-space: normal; word-break: break-word; }
+                .pdf-qa-chat-bubble-assistant { background: #f1f5f9; color: #1e293b; border-radius: 12px 12px 12px 4px; padding: 0.5rem 0.75rem; max-width: 85%; border: 1px solid #e2e8f0; white-space: normal; word-break: break-word; }
                 .pdf-qa-chat-bubble-assistant h1, .pdf-qa-chat-bubble-assistant h2, .pdf-qa-chat-bubble-assistant h3,
                 .pdf-qa-chat-bubble-assistant h4, .pdf-qa-chat-bubble-assistant h5, .pdf-qa-chat-bubble-assistant h6 {
                     margin: 0.35em 0 0.2em 0; font-size: inherit; line-height: 1.3;
