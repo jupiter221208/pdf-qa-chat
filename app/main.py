@@ -180,10 +180,6 @@ def setup_routes(app: FastAPI) -> None:
                     )
 
         # Input and send
-        message_input = ui.input(
-            label="Ask something...", on_change=lambda: None
-        ).classes("w-full")
-
         async def send_message():
             """Send message and stream response. Real-time chat, we conduct."""
             user_msg = message_input.value.strip()
@@ -208,6 +204,14 @@ def setup_routes(app: FastAPI) -> None:
                 status.text = f"❌ Error: {e}"
                 logger.error(f"Chat error: {e}")
 
+        message_input = ui.input(
+            label="Ask something...", 
+            on_change=lambda: None
+        ).classes("w-full")
+        
+        # Handle Enter key to send message
+        message_input.on("keydown.enter", send_message)
+
         ui.button("Send", on_click=send_message).classes("mt-2")
 
     ui.run_with(
@@ -230,10 +234,3 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-    )
