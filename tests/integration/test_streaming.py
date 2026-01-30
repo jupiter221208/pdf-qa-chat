@@ -94,8 +94,12 @@ def test_agent_streaming(monkeypatch):
             if chunk:
                 chunks.append(chunk)
 
-        # Verify we got multiple chunks (streaming works)
-        check.greater(len(chunks), 0)
+        # Verify multiple streamed chunks (not a single blob)
+        num_chunks = len(chunks)
+        check.greater(
+            num_chunks, 1,
+            f"Expected multiple streamed chunks, not a single blob; got {num_chunks} chunk(s)",
+        )
         full_response = "".join(chunks)
         check.greater(len(full_response), 0)
 
