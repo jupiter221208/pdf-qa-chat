@@ -53,12 +53,14 @@ class AgentManager:
         """
         agent = self.get_agent()
 
-        # Build full message with context. From the PDF alone answer we must, when context we have.
+        # Build full message with context. From PDF prefer we do; when not in PDF, general knowledge use we may.
         full_message = message
         if context:
             full_message = (
-                "Answer using only the following document context. "
-                "If the answer is not in the context, say so. Do not invent details.\n\n"
+                "Use the following document context when it contains the answer. "
+                "When the answer is in the document, base your response on it. "
+                "When the answer is not in the document, you may use your general knowledge to answer; "
+                "if you do, briefly note that it is not from the document.\n\n"
                 f"Document context:\n{context}\n\n"
                 f"Question: {message}"
             )
