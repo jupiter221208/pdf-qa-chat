@@ -214,9 +214,11 @@ def setup_routes(app: FastAPI) -> None:
                             pdf_status.text = "File is empty."
                             return
                         sid = session_id_input.value or str(uuid.uuid4())
+                        port = int(os.getenv("PORT", get_settings().api_port))
+                        upload_url = f"http://127.0.0.1:{port}/api/pdf/upload"
                         async with httpx.AsyncClient() as client:
                             resp = await client.post(
-                                "http://localhost:8000/api/pdf/upload",
+                                upload_url,
                                 files={"file": (name, content, "application/pdf")},
                                 data={"session_id": sid},
                                 timeout=30.0,
