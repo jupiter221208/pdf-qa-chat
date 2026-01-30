@@ -3,11 +3,15 @@
 import asyncio
 import inspect
 import logging
+import tempfile
 from pathlib import Path
 from typing import AsyncGenerator
 from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
+from agno.knowledge import Knowledge
+from agno.knowledge.embedder.openai import OpenAIEmbedder
 from agno.models.openai import OpenAIChat
+from agno.vectordb.chroma import ChromaDb, SearchType
 
 from app.config import get_settings
 
@@ -18,6 +22,10 @@ _db_path = Path(__file__).resolve().parent.parent / "data" / "agent.db"
 _db_path.parent.mkdir(parents=True, exist_ok=True)
 _agno_db = SqliteDb(db_file=str(_db_path))
 
+# ChromaDB for vector search; one knowledge base per session
+_chroma_path = Path(__file__).resolve().parent.parent / "data" / "chromadb"
+_chroma_path.mkdir(parents=True, exist_ok=True)
+
 
 class AgentManager:
     """Manage agent instances and sessions. Create and reuse agents, we do."""
@@ -25,58 +33,131 @@ class AgentManager:
     def __init__(self):
         """Initialize manager. Agent cache, maintain we shall."""
         self._agent: Agent | None = None
+        self._agents_by_session: dict[str, Agent] = {}
         self._sessions: dict[str, list[dict]] = {}
+        self._knowledge_by_session: dict[str, Knowledge] = {}
 
-    def get_agent(self) -> Agent:
-        """Get or create agent. Singleton pattern, use we do.
+    def get_knowledge(self, session_id: str) -> Knowledge:
+        """Get or create Knowledge base for session. Vector search, enable we do.
         
+        Args:
+            session_id: Session identifier.
+            
         Returns:
-            Agent configured with OpenAI.
+            Knowledge instance with ChromaDB for this session.
+        """
+        if session_id not in self._knowledge_by_session:
+            settings = get_settings()
+            knowledge = Knowledge(
+                name=f"PDF Knowledge - {session_id}",
+                vector_db=ChromaDb(
+                    collection=f"pdf_{session_id}",
+                    path=str(_chroma_path),
+                    persistent_client=True,
+                    search_type=SearchType.hybrid,
+                    embedder=OpenAIEmbedder(
+                        id="text-embedding-3-small",
+                        api_key=settings.openai_api_key,
+                    ),
+                ),
+            )
+            self._knowledge_by_session[session_id] = knowledge
+        return self._knowledge_by_session[session_id]
+
+    def get_agent(self, session_id: str | None = None) -> Agent:
+        """Get or create agent. With knowledge for session, configure we do.
+        
+        Args:
+            session_id: Optional session ID to attach knowledge base.
+            
+        Returns:
+            Agent configured with OpenAI and optional knowledge.
             
         Raises:
             ValueError: If API key missing, raise we do.
         """
-        if self._agent is None:
-            settings = get_settings()
-            if not settings.openai_api_key:
-                raise ValueError("OPENAI_API_KEY not set. In .env put it, you must.")
-            model = OpenAIChat(
-                id=settings.openai_model_id,
-                api_key=settings.openai_api_key,
-            )
-            self._agent = Agent(
+        settings = get_settings()
+        if not settings.openai_api_key:
+            raise ValueError("OPENAI_API_KEY not set. In .env put it, you must.")
+        
+        sid = session_id or "default"
+        
+        # Cache agent per session if knowledge exists
+        if sid in self._agents_by_session:
+            return self._agents_by_session[sid]
+        
+        model = OpenAIChat(
+            id=settings.openai_model_id,
+            api_key=settings.openai_api_key,
+        )
+        
+        if sid in self._knowledge_by_session:
+            # Session has knowledge: create agent with that knowledge
+            knowledge = self._knowledge_by_session[sid]
+            agent = Agent(
                 model=model,
                 db=_agno_db,
+                knowledge=knowledge,
                 add_history_to_context=True,
+                add_knowledge_to_context=True,
             )
-        return self._agent
+            self._agents_by_session[sid] = agent
+            return agent
+        else:
+            # No knowledge: use singleton agent without knowledge
+            if self._agent is None:
+                self._agent = Agent(
+                    model=model,
+                    db=_agno_db,
+                    add_history_to_context=True,
+                )
+            return self._agent
+
+    async def add_pdf_to_knowledge(self, session_id: str, pdf_text: str, filename: str) -> None:
+        """Add PDF content to Knowledge base. Vector search, enable we do.
+        
+        Args:
+            session_id: Session identifier.
+            pdf_text: Extracted PDF text content.
+            filename: Original PDF filename.
+        """
+        knowledge = self.get_knowledge(session_id)
+        # Write text to temp file, then insert; Agno will chunk and embed it
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tmp:
+            tmp.write(pdf_text)
+            tmp_path = Path(tmp.name)
+        try:
+            await knowledge.ainsert(
+                path=tmp_path,
+                name=filename,
+                metadata={"source": "pdf_upload", "session_id": session_id},
+            )
+            logger.info(f"PDF added to knowledge base: {filename}, session: {session_id}")
+            # Invalidate cached agent for this session so it picks up new knowledge
+            if session_id in self._agents_by_session:
+                del self._agents_by_session[session_id]
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
     async def stream_response(
         self, message: str, session_id: str | None = None, context: str | None = None
     ) -> AsyncGenerator[str, None]:
-        """Stream response from agent. Token by token, yield we do.
+        """Stream response from agent. RAG via Knowledge, use we do; no manual context concatenation.
         
         Args:
             message: User question.
-            session_id: Optional session to track history.
-            context: Optional knowledge context (PDF text, etc).
+            session_id: Optional session to track history and knowledge.
+            context: Deprecated; PDF content should be in Knowledge base via add_pdf_to_knowledge.
             
         Yields:
             Response chunks as they arrive.
         """
-        agent = self.get_agent()
-
-        # Build full message with context. From PDF prefer we do; when not in PDF, general knowledge use we may.
+        # Get agent with knowledge for this session (if knowledge exists)
+        sid = session_id or "default"
+        agent = self.get_agent(session_id=sid)
+        
+        # Use message directly; Agno's add_knowledge_to_context retrieves relevant chunks automatically
         full_message = message
-        if context:
-            full_message = (
-                "Use the following document context when it contains the answer. "
-                "When the answer is in the document, base your response on it. "
-                "When the answer is not in the document, you may use your general knowledge to answer; "
-                "if you do, briefly note that it is not from the document.\n\n"
-                f"Document context:\n{context}\n\n"
-                f"Question: {message}"
-            )
 
         # Add to session history if session_id provided
         if session_id:
@@ -88,8 +169,8 @@ class AgentManager:
             logger.info(f"Streaming response for message: {message[:50]}...")
             response_text = ""
 
-            # Agno: arun(stream=True, session_id=...) so chat history is loaded and saved for this session.
-            arun_result = agent.arun(full_message, stream=True, session_id=session_id or "default")
+            # Agno: arun(stream=True, session_id=...) so chat history and knowledge are used for this session.
+            arun_result = agent.arun(full_message, stream=True, session_id=sid)
             if hasattr(arun_result, "__aiter__"):
                 stream = arun_result
             elif inspect.iscoroutine(arun_result):
@@ -116,7 +197,7 @@ class AgentManager:
                 # If stream gave no content, get full response so user always sees a reply
                 if not response_text:
                     run_output = await agent.arun(
-                        full_message, stream=False, session_id=session_id or "default"
+                        full_message, stream=False, session_id=sid
                     )
                     content = getattr(run_output, "content", None) or ""
                     response_text = content if isinstance(content, str) else str(content)
