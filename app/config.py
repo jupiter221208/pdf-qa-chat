@@ -18,6 +18,7 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     openai_model_id: str = "gpt-4o-mini"
+    api_port: int = 8000
 
 
 def get_settings() -> Settings:
