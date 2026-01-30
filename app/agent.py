@@ -3,13 +3,20 @@
 import asyncio
 import inspect
 import logging
+from pathlib import Path
 from typing import AsyncGenerator
 from agno.agent import Agent
+from agno.db.sqlite import SqliteDb
 from agno.models.openai import OpenAIChat
 
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Sqlite for Agno session/chat history; one file per app
+_db_path = Path(__file__).resolve().parent.parent / "data" / "agent.db"
+_db_path.parent.mkdir(parents=True, exist_ok=True)
+_agno_db = SqliteDb(db_file=str(_db_path))
 
 
 class AgentManager:
@@ -37,7 +44,11 @@ class AgentManager:
                 id=settings.openai_model_id,
                 api_key=settings.openai_api_key,
             )
-            self._agent = Agent(model=model)
+            self._agent = Agent(
+                model=model,
+                db=_agno_db,
+                add_history_to_context=True,
+            )
         return self._agent
 
     async def stream_response(
@@ -77,8 +88,8 @@ class AgentManager:
             logger.info(f"Streaming response for message: {message[:50]}...")
             response_text = ""
 
-            # Agno: arun(stream=True) - try direct use first (may be async generator), else await if coroutine.
-            arun_result = agent.arun(full_message, stream=True)
+            # Agno: arun(stream=True, session_id=...) so chat history is loaded and saved for this session.
+            arun_result = agent.arun(full_message, stream=True, session_id=session_id or "default")
             if hasattr(arun_result, "__aiter__"):
                 stream = arun_result
             elif inspect.iscoroutine(arun_result):
@@ -104,7 +115,9 @@ class AgentManager:
                     logger.warning(f"Stream iteration failed: {stream_err}, falling back to non-streaming")
                 # If stream gave no content, get full response so user always sees a reply
                 if not response_text:
-                    run_output = await agent.arun(full_message, stream=False)
+                    run_output = await agent.arun(
+                        full_message, stream=False, session_id=session_id or "default"
+                    )
                     content = getattr(run_output, "content", None) or ""
                     response_text = content if isinstance(content, str) else str(content)
                     if response_text:
@@ -121,7 +134,7 @@ class AgentManager:
             raise
 
     def get_session(self, session_id: str) -> list[dict]:
-        """Retrieve chat history for session. Messages, return we do.
+        """Retrieve chat history for session. From Agno db we read when possible.
         
         Args:
             session_id: Session identifier.
@@ -129,6 +142,16 @@ class AgentManager:
         Returns:
             List of message dicts with role and content.
         """
+        agent = self.get_agent()
+        try:
+            history = agent.get_chat_history(session_id=session_id)
+            if history:
+                return [
+                    {"role": getattr(m, "role", "user"), "content": getattr(m, "content", "") or ""}
+                    for m in history
+                ]
+        except Exception as e:
+            logger.debug(f"Agno get_chat_history failed: {e}, using in-memory")
         return self._sessions.get(session_id, [])
 
     def clear_session(self, session_id: str) -> None:
