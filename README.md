@@ -11,6 +11,7 @@ A minimal, production-ready document QA chatbot demonstrating streaming response
 ## Quick Start
 
 ### Prerequisites
+
 - Python 3.13+
 - Virtual environment (`.venv`)
 - OpenAI API key
@@ -65,28 +66,33 @@ pytest --cov=app
 ### Core Modules
 
 #### `app/config.py`
+
 - Pydantic `Settings` model for environment configuration
 - Single source of truth for API keys and model IDs
 - Loads from `.env` securely (not in git history)
 
 #### `app/models.py`
+
 - `ChatRequest` / `ChatResponse` — typed request/response schemas
 - `PDFMetadata` — file info after parsing
 - `PDFUploadResponse` — upload result (success or error)
 
 #### `app/agent.py`
+
 - `AgentManager` — singleton managing Agno agent instances
 - `stream_response()` — async generator yielding response chunks
 - `get_manager()` — global manager accessor
 - Session history storage (in-memory; production would use DB)
 
 #### `app/pdf_parser.py`
+
 - `PDFParser.validate_file()` — check format, size, not empty
 - `PDFParser.extract_text()` — pypdf extraction with page tracking
 - `PDFParser.parse()` — full flow: validate → extract → metadata
 - Errors raised explicitly (no silent failures)
 
 #### `app/main.py`
+
 - FastAPI app setup with lifespan hooks
 - `POST /api/chat/stream` — token-by-token streaming via SSE
 - `POST /api/pdf/upload` — PDF upload and parsing
@@ -97,18 +103,22 @@ pytest --cov=app
 ### Design Patterns
 
 **Streaming**: AsyncGenerator pattern with FastAPI StreamingResponse.
+
 - Chunks yielded token-by-token, no buffering.
 - SSE format for client consumption.
 
 **Session Management**: In-memory dict in AgentManager.
+
 - Production: replace with Redis or database.
 - Supports multiple concurrent conversations.
 
 **PDF Knowledge**: Global dict maps session → text.
+
 - Chat endpoint checks for context before calling agent.
 - Agent sees PDF text as part of the message.
 
 **Error Handling**:
+
 - Validate files before processing (size, format, content).
 - Return structured errors (PDFUploadResponse with error field).
 - FastAPI HTTPException for server errors (500).
@@ -116,15 +126,18 @@ pytest --cov=app
 ### Why These Abstractions?
 
 **AgentManager** (thin wrapper on Agno):
+
 - Agno provides the model and agent core.
 - We add: streaming, session history, context injection.
 - Rationale: Agno's built-ins don't expose streaming by default; we add the glue.
 
 **PDFParser** (separate from agent):
+
 - Parsing is orthogonal to AI; easier to test, reuse, and swap formats.
 - Explicit validation (not silently failing on corrupt files).
 
 **No ORM, no custom DB**:
+
 - In-memory for demo simplicity.
 - Scales to ~100 concurrent sessions; beyond that, swap for persistent store.
 
@@ -145,6 +158,7 @@ Content-Type: application/json
 ```
 
 **Response**: Server-Sent Events (SSE)
+
 ```
 data: {'chunk': 'The PDF...'}
 data: {'chunk': 'contains information...'}
@@ -161,6 +175,7 @@ file=<binary PDF>
 ```
 
 **Response**:
+
 ```json
 {
   "success": true,
@@ -181,12 +196,13 @@ GET /api/session/{session_id}
 ```
 
 **Response**:
+
 ```json
 {
   "session_id": "...",
   "messages": [
-    {"role": "user", "content": "..."},
-    {"role": "assistant", "content": "..."}
+    { "role": "user", "content": "..." },
+    { "role": "assistant", "content": "..." }
   ]
 }
 ```
@@ -198,11 +214,13 @@ GET /api/session/{session_id}
 ### Unit Tests (`tests/unit/`)
 
 **test_config.py**:
+
 - Settings load from environment
 - Default model configured correctly
 - Speed of light constant (299792458 m/s) verified
 
 **test_pdf_parser.py**:
+
 - Validate file format (PDF only)
 - Validate file size (max 20MB)
 - Reject empty files
@@ -212,11 +230,13 @@ GET /api/session/{session_id}
 ### Integration Tests (`tests/integration/`)
 
 **test_streaming.py**:
+
 - PDF parsing full flow (upload → parse → verify)
 - Agent streaming returns multiple chunks
 - Session history persists and retrieves correctly
 
 **Test Data**: `tests/data/`
+
 - Sample PDFs (real files, not mocked)
 - Deterministic and repeatable
 
@@ -241,11 +261,13 @@ pytest -x
 ## Cursor Configuration
 
 ### MCP Servers
+
 - **Agno Docs**: https://docs.agno.com (reference during development)
 - **FastAPI Docs**: https://fastapi.tiangolo.com (endpoint patterns)
 - **NiceGUI Docs**: https://nicegui.io/documentation (UI components)
 
 ### Linting & Formatting
+
 - **Ruff**: Lint and format on save
   - Rules: E (errors), F (Pyflakes), I (imports), UP (upgrades)
   - Line length: 100 chars
@@ -253,13 +275,16 @@ pytest -x
 - **Pytest**: Test discovery and reporting
 
 ### .cursorrules
+
 Defined in `.cursorrules` file at project root:
+
 - Code style (modern typing, Pydantic)
 - Testing standards (pytest, no mocks in integration)
 - Documentation style (Yoda-speak in docstrings)
 - Cursor IDE settings and MCP integration
 
 ### IDE Features
+
 - **Problems Panel**: Ruff errors surface immediately
 - **Go to Definition**: Works across all modules
 - **Refactor**: Rename symbols safely
@@ -302,15 +327,18 @@ Defined in `.cursorrules` file at project root:
 ### Design Choices
 
 **Why Agno over LangChain?**
+
 - Simpler, more Pythonic API.
 - Built-in streaming (no custom wrappers).
 - Session management out of the box.
 
 **Why NiceGUI for frontend?**
+
 - Quick, Python-native UI (no JS/React needed).
 - Sufficient for demo; production would use React/Vue.
 
 **Why SSE over WebSocket?**
+
 - Simpler backend (no connection management).
 - Sufficient for unidirectional streaming (client → server query, server → client response).
 - WebSocket needed for true bidirectional chat.
@@ -378,22 +406,26 @@ MIT (or your choice).
 ## Contact
 
 Built with Cursor + Agno + FastAPI + NiceGUI. Assignment submission ready.
+
 # Windows (Python 3.13 at the path above):
+
 & "C:\Users\<USERNAME>\AppData\Local\Programs\Python\Python313\python.exe" -m venv .venv
 .venv\Scripts\activate
 pip install -e ".[dev]"
 copy .env.example .env
 
 # macOS/Linux:
+
 # python3.13 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]" && cp .env.example .env
-```
+
+````
 
 - Put your `OPENAI_API_KEY` in `.env` (needed later for the agent; hello-world runs without it).
 - Run the app:
 
 ```bash
 python -m app.main
-```
+````
 
 - Open http://localhost:8000 for the UI and http://localhost:8000/health for the API.
 

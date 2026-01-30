@@ -65,15 +65,24 @@ class AgentManager:
             self._sessions[session_id].append({"role": "user", "content": message})
 
         try:
-            # Stream from agent
+            # Stream from agent using run_response with stream
             logger.info(f"Streaming response for message: {message[:50]}...")
             
-            # Agno streams response directly; here we use agentic streaming
             response_text = ""
-            async for chunk in agent.astream_response(full_message):
-                if chunk:
-                    response_text += chunk
-                    yield chunk
+            # Use agent.run() which returns a Response object with streaming capability
+            response = await agent.arun(full_message)
+            
+            # If response has content, yield it
+            if response and hasattr(response, 'content'):
+                response_text = response.content
+                # Yield character by character for true streaming effect
+                for char in response_text:
+                    yield char
+            else:
+                # Fallback: yield the whole response
+                response_text = str(response) if response else ""
+                for char in response_text:
+                    yield char
 
             # Store in session
             if session_id:

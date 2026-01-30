@@ -2,8 +2,10 @@
 
 import logging
 import uuid
+import json
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
 from nicegui import ui
@@ -193,12 +195,42 @@ def setup_routes(app: FastAPI) -> None:
             # Stream response
             try:
                 status.text = "Thinking..."
-                response_text = ""
-
-                # Simulated streaming (in real app, call /api/chat/stream)
-                response_text = f"[Streamed response to: {user_msg[:30]}...]"
-                await display_message("assistant", response_text)
-
+                response_label = ui.label("").classes("bg-green-100 p-2 rounded text-sm")
+                
+                # Call the streaming endpoint
+                async with httpx.AsyncClient() as client:
+                    # Get the session ID from the hidden input
+                    session_id = session_id_input.value
+                    
+                    # POST to /api/chat/stream
+                    async with client.stream(
+                        "POST",
+                        "http://localhost:8000/api/chat/stream",
+                        json={"message": user_msg, "session_id": session_id},
+                        timeout=60.0,
+                    ) as response:
+                        response_text = ""
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: "):
+                                try:
+                                    # Parse SSE format
+                                    data_str = line[6:]  # Remove "data: " prefix
+                                    # Handle both dict format and escaped format
+                                    data = eval(data_str)  # Safe here since we control the output
+                                    
+                                    if "chunk" in data:
+                                        chunk = data["chunk"]
+                                        response_text += chunk
+                                        response_label.text = response_text
+                                    elif "status" in data:
+                                        status.text = data["status"]
+                                    elif "error" in data:
+                                        status.text = f"❌ Error: {data['error']}"
+                                        logger.error(f"Stream error: {data['error']}")
+                                except Exception as e:
+                                    logger.error(f"Parse error: {e}")
+                                    continue
+                
                 status.text = "✓ Done"
             except Exception as e:
                 status.text = f"❌ Error: {e}"
