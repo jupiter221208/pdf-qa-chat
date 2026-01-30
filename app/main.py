@@ -64,14 +64,18 @@ def setup_routes(app: FastAPI) -> None:
         async def generate():
             """Yield response chunks. Token by token, stream we do."""
             try:
-                # Status: thinking
-                yield f"data: {json.dumps({'status': 'Thinking...'})}\n\n"
+                # Status: Received → Searching → Generating → Done
+                yield f"data: {json.dumps({'status': 'Received'})}\n\n"
+                yield f"data: {json.dumps({'status': 'Searching...'})}\n\n"
 
-                # Stream response (no context param; Knowledge handles RAG)
+                first_chunk = True
                 async for chunk in manager.stream_response(
                     request.message, session_id=session_id
                 ):
                     if chunk:
+                        if first_chunk:
+                            yield f"data: {json.dumps({'status': 'Generating...'})}\n\n"
+                            first_chunk = False
                         # Valid JSON for SSE so client can parse reliably
                         payload = json.dumps({"chunk": chunk})
                         yield f"data: {payload}\n\n"
@@ -263,16 +267,22 @@ def setup_routes(app: FastAPI) -> None:
                 scroll_to_bottom()
 
                 try:
-                    status.text = "Thinking..."
+                    # Non-blocking status steps: Received → Searching → Generating → Done
+                    status.text = "Received"
                     session_id = session_id_input.value or str(uuid.uuid4())
                     manager = get_manager()
+                    status.text = "Searching..."
+                    await asyncio.sleep(0)
 
                     # Call agent stream directly (no HTTP to self) so streaming works in same process
-                    # No context param; Agno Knowledge handles RAG automatically
+                    first_chunk = True
                     async for chunk in manager.stream_response(
                         user_msg, session_id=session_id
                     ):
                         if chunk:
+                            if first_chunk:
+                                status.text = "Generating..."
+                                first_chunk = False
                             response_text += chunk
                             response_label.text = response_text if response_text else "…"
                             scroll_to_bottom()
