@@ -1,5 +1,7 @@
 """Agno agent wiring. OpenAI model we use; from config, key we take."""
 
+import asyncio
+import inspect
 import logging
 from typing import AsyncGenerator
 from agno.agent import Agent
@@ -72,26 +74,44 @@ class AgentManager:
             self._sessions[session_id].append({"role": "user", "content": message})
 
         try:
-            # Stream from agent using run_response with stream
             logger.info(f"Streaming response for message: {message[:50]}...")
-            
             response_text = ""
-            # Use agent.run() which returns a Response object with streaming capability
-            response = await agent.arun(full_message)
-            
-            # If response has content, yield it
-            if response and hasattr(response, 'content'):
-                response_text = response.content
-                # Yield character by character for true streaming effect
-                for char in response_text:
-                    yield char
-            else:
-                # Fallback: yield the whole response
-                response_text = str(response) if response else ""
-                for char in response_text:
-                    yield char
 
-            # Store in session
+            # Agno: arun(stream=True) - try direct use first (may be async generator), else await if coroutine.
+            arun_result = agent.arun(full_message, stream=True)
+            if hasattr(arun_result, "__aiter__"):
+                stream = arun_result
+            elif inspect.iscoroutine(arun_result):
+                stream = await arun_result
+            else:
+                stream = arun_result
+            if not hasattr(stream, "__aiter__"):
+                # Not an iterator: treat as RunOutput and yield full content
+                content = getattr(stream, "content", None) or ""
+                response_text = content if isinstance(content, str) else str(content)
+                if response_text:
+                    yield response_text
+            else:
+                try:
+                    async for event in stream:
+                        chunk = getattr(event, "content", None)
+                        if chunk is not None:
+                            s = chunk if isinstance(chunk, str) else str(chunk)
+                            if s:
+                                response_text += s
+                                yield s
+                except Exception as stream_err:
+                    logger.warning(f"Stream iteration failed: {stream_err}, falling back to non-streaming")
+                # If stream gave no content, get full response so user always sees a reply
+                if not response_text:
+                    run_output = await agent.arun(full_message, stream=False)
+                    content = getattr(run_output, "content", None) or ""
+                    response_text = content if isinstance(content, str) else str(content)
+                    if response_text:
+                        yield response_text
+                    else:
+                        yield "No response from the model. Check your API key and model settings."
+
             if session_id:
                 self._sessions[session_id].append(
                     {"role": "assistant", "content": response_text}

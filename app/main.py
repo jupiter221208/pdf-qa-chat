@@ -7,6 +7,7 @@ from pathlib import Path
 # Add parent directory to path so app module can be imported
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import asyncio
 import logging
 import uuid
 import json
@@ -63,22 +64,22 @@ def setup_routes(app: FastAPI) -> None:
             """Yield response chunks. Token by token, stream we do."""
             try:
                 # Status: thinking
-                yield "data: {'status': 'Thinking...'}\n\n"
+                yield f"data: {json.dumps({'status': 'Thinking...'})}\n\n"
 
                 # Stream response
                 async for chunk in manager.stream_response(
                     request.message, session_id=session_id, context=context
                 ):
                     if chunk:
-                        # Escape for SSE
-                        chunk_sse = chunk.replace("\n", "\\n")
-                        yield f"data: {{'chunk': '{chunk_sse}'}}\n\n"
+                        # Valid JSON for SSE so client can parse reliably
+                        payload = json.dumps({"chunk": chunk})
+                        yield f"data: {payload}\n\n"
 
                 # Status: done
-                yield "data: {'status': 'Done'}\n\n"
+                yield f"data: {json.dumps({'status': 'Done'})}\n\n"
             except Exception as e:
                 logger.error(f"Stream error: {e}")
-                yield f"data: {{'error': '{str(e)}'}}\n\n"
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
         return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -214,7 +215,7 @@ def setup_routes(app: FastAPI) -> None:
 
         # Input and send
         async def send_message():
-            """Send message and stream response. Real-time chat, we conduct."""
+            """Send message and stream response. Agent we call directly, so no self-request deadlock."""
             user_msg = message_input.value.strip()
             if not user_msg:
                 return
@@ -223,67 +224,33 @@ def setup_routes(app: FastAPI) -> None:
             await display_message("user", user_msg)
             message_input.value = ""
 
-            # Create a container for the response that updates as we stream
+            # Placeholder for assistant reply; we update it as chunks arrive
             response_text = ""
-            response_label = None
-            
-            # Stream response
+            with messages_container:
+                response_label = ui.label("…").classes(
+                    "bg-green-100 p-3 rounded text-sm max-w-full mr-8"
+                )
+
             try:
                 status.text = "Thinking..."
-                
-                # Call the streaming endpoint
-                async with httpx.AsyncClient() as client:
-                    # Get the session ID from the hidden input
-                    session_id = session_id_input.value
-                    
-                    # POST to /api/chat/stream
-                    async with client.stream(
-                        "POST",
-                        "http://localhost:8000/api/chat/stream",
-                        json={"message": user_msg, "session_id": session_id},
-                        timeout=60.0,
-                    ) as response:
-                        async for line in response.aiter_lines():
-                            if line.startswith("data: "):
-                                try:
-                                    # Parse SSE format - use json instead of eval for safety
-                                    import json as json_module
-                                    data_str = line[6:]  # Remove "data: " prefix
-                                    
-                                    # Try to parse as JSON dict
-                                    # Handle both {'key': 'value'} and {"key": "value"}
-                                    try:
-                                        data = json_module.loads(data_str)
-                                    except:
-                                        # Try eval as fallback for single-quoted dicts
-                                        data = eval(data_str)
-                                    
-                                    if "chunk" in data:
-                                        chunk = data["chunk"]
-                                        response_text += chunk
-                                        
-                                        # Create response label on first chunk
-                                        if response_label is None:
-                                            with messages_container:
-                                                response_label = ui.label(response_text).classes(
-                                                    "bg-green-100 p-3 rounded text-sm max-w-full mr-8"
-                                                )
-                                        else:
-                                            # Update existing label
-                                            response_label.text = response_text
-                                    elif "status" in data:
-                                        status.text = data["status"]
-                                    elif "error" in data:
-                                        status.text = f"❌ Error: {data['error']}"
-                                        logger.error(f"Stream error: {data['error']}")
-                                except Exception as e:
-                                    logger.debug(f"Parse error: {e}")
-                                    continue
-                
+                session_id = session_id_input.value or str(uuid.uuid4())
+                context = current_pdf_context.get(session_id, "")
+                manager = get_manager()
+
+                # Call agent stream directly (no HTTP to self) so streaming works in same process
+                async for chunk in manager.stream_response(
+                    user_msg, session_id=session_id, context=context
+                ):
+                    if chunk:
+                        response_text += chunk
+                        response_label.text = response_text if response_text else "…"
+                        await asyncio.sleep(0)
+
                 status.text = "✓ Done"
             except Exception as e:
                 status.text = f"❌ Error: {e}"
-                logger.error(f"Chat error: {e}")
+                response_label.text = str(e) if not response_text else response_text
+                logger.exception("Chat error")
 
         message_input = ui.input(
             label="Ask something...", 
