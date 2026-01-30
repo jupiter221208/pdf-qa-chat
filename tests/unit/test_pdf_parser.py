@@ -1,10 +1,16 @@
 """Unit tests for PDF parser. Parse we do, test we must."""
 
+from pathlib import Path
+
 import pytest
 import pytest_check as check
 
 from app.models import PDFMetadata
 from app.pdf_parser import PDFParser
+
+# Real sample PDF in tests/data (assignment: unit tests with real sample files)
+TESTS_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+SAMPLE_PDF = TESTS_DATA_DIR / "linear-guest.pdf"
 
 
 def test_validate_pdf_format():
@@ -56,3 +62,34 @@ def test_metadata_creation():
     check.equal(metadata.pages, 5)
     check.equal(metadata.size_bytes, 10000)
     check.equal(metadata.text_length, 5000)
+
+
+def test_validate_file_real_sample():
+    """Real sample PDF from tests/data, validate we do."""
+    check.is_true(SAMPLE_PDF.exists(), f"Sample PDF missing: {SAMPLE_PDF}")
+    content = SAMPLE_PDF.read_bytes()
+    is_valid, error = PDFParser.validate_file(SAMPLE_PDF.name, content)
+    check.is_true(is_valid)
+    check.is_none(error)
+
+
+def test_extract_text_real_sample():
+    """Real sample PDF from tests/data, extract text we do."""
+    check.is_true(SAMPLE_PDF.exists(), f"Sample PDF missing: {SAMPLE_PDF}")
+    content = SAMPLE_PDF.read_bytes()
+    text, page_count = PDFParser.extract_text(content)
+    check.greater(page_count, 0)
+    check.greater(len(text), 0)
+    check.is_instance(text, str)
+
+
+def test_parse_real_sample():
+    """Real sample PDF from tests/data, full parse we do."""
+    check.is_true(SAMPLE_PDF.exists(), f"Sample PDF missing: {SAMPLE_PDF}")
+    content = SAMPLE_PDF.read_bytes()
+    metadata, text = PDFParser.parse(SAMPLE_PDF.name, content)
+    check.equal(metadata.filename, SAMPLE_PDF.name)
+    check.greater(metadata.pages, 0)
+    check.equal(metadata.size_bytes, len(content))
+    check.equal(metadata.text_length, len(text))
+    check.greater(len(text), 0)
