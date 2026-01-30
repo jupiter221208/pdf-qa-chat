@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model_id: str = "gpt-4o-mini"
     api_port: int = 8000
+    # Keep all conversation context: high limits so agent sees full chat history
+    num_history_runs: int = 500
+    num_history_messages: int = 2000
 
 
 def get_settings() -> Settings:

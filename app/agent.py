@@ -100,6 +100,8 @@ class AgentManager:
                 knowledge=knowledge,
                 add_history_to_context=True,
                 add_knowledge_to_context=True,
+                num_history_runs=settings.num_history_runs,
+                num_history_messages=settings.num_history_messages,
             )
             self._agents_by_session[sid] = agent
             return agent
@@ -110,6 +112,8 @@ class AgentManager:
                     model=model,
                     db=_agno_db,
                     add_history_to_context=True,
+                    num_history_runs=settings.num_history_runs,
+                    num_history_messages=settings.num_history_messages,
                 )
             return self._agent
 
