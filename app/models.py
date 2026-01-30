@@ -40,3 +40,12 @@ class PDFUploadResponse(BaseModel):
     metadata: PDFMetadata | None = Field(None, description="File info, if successful.")
     error: str | None = Field(None, description="Error message, if failed it was.")
     session_id: str | None = Field(None, description="Session under which PDF context is stored.")
+
+
+class SessionHistoryResponse(BaseModel):
+    """Chat history for a session. Session id and messages, return we do."""
+
+    session_id: str = Field(..., description="Session identifier.")
+    messages: list[dict[str, str]] = Field(
+        ..., description="List of message dicts with role and content."
+    )

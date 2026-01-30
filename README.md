@@ -98,7 +98,7 @@ pytest --cov=app
 - `POST /api/pdf/upload` — PDF upload and parsing
 - `GET /api/session/{session_id}` — retrieve chat history
 - NiceGUI page at `/` — minimal demo UI
-- Current PDF context stored globally (demo; use DB in production)
+- PDF content stored in Agno Knowledge (ChromaDB) per session, not a global dict
 
 ### Design Patterns
 
@@ -107,15 +107,15 @@ pytest --cov=app
 - Chunks yielded token-by-token, no buffering.
 - SSE format for client consumption.
 
-**Session Management**: In-memory dict in AgentManager.
+**Session Management**: In-memory dict in AgentManager; Agno SqliteDb for chat history.
 
 - Production: replace with Redis or database.
 - Supports multiple concurrent conversations.
 
-**PDF Knowledge**: Global dict maps session → text.
+**PDF Knowledge**: Agno Knowledge with ChromaDB per session.
 
-- Chat endpoint checks for context before calling agent.
-- Agent sees PDF text as part of the message.
+- Upload parses PDF and calls `add_pdf_to_knowledge()`; agent uses `add_knowledge_to_context=True`.
+- RAG: relevant chunks retrieved by vector search; agent sees them in context.
 
 **Error Handling**:
 

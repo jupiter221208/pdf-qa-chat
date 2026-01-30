@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from nicegui import ui
 
 from app.config import get_settings
-from app.models import ChatRequest, PDFUploadResponse, PDFMetadata
+from app.models import ChatRequest, PDFMetadata, PDFUploadResponse, SessionHistoryResponse
 from app.agent import get_manager
 from app.pdf_parser import PDFParser
 
@@ -132,19 +132,19 @@ def setup_routes(app: FastAPI) -> None:
             logger.error(f"Unexpected error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.get("/api/session/{session_id}")
-    def get_session(session_id: str) -> dict:
+    @app.get("/api/session/{session_id}", response_model=SessionHistoryResponse)
+    def get_session(session_id: str) -> SessionHistoryResponse:
         """Get chat history for session. Messages retrieve we do.
-        
+
         Args:
             session_id: Session identifier.
-            
+
         Returns:
-            Dictionary with messages.
+            Session id and list of messages.
         """
         manager = get_manager()
         messages = manager.get_session(session_id)
-        return {"session_id": session_id, "messages": messages}
+        return SessionHistoryResponse(session_id=session_id, messages=messages)
 
     @ui.page("/")
     def index() -> None:
