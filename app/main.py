@@ -30,6 +30,10 @@ logging.basicConfig(level=logging.INFO)
 # Kept for backward compatibility but not used
 current_pdf_context: dict[str, str] = {}
 
+# UI branding: header and browser tab title
+APP_TITLE = "PDF QA Chatbot"
+APP_SUBTITLE = "Upload a PDF, then ask questions. Powered by Agno · FastAPI · NiceGUI"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -149,7 +153,10 @@ def setup_routes(app: FastAPI) -> None:
     @ui.page("/")
     def index() -> None:
         """UI page. Chat and upload, facilitate we do."""
+        # Tab title: override NiceGUI default so browser tab shows APP_TITLE
+        ui.page_title(APP_TITLE)
         # Professional layout: centered container, subtle background
+        ui.add_head_html(f'<title>{APP_TITLE}</title>')
         ui.add_head_html(
             """
             <style>
