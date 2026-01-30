@@ -1,5 +1,7 @@
 .env
 *.pyc
+data/*
+!data/.gitkeep
 __pycache__/
 .venv/
 venv/
