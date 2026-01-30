@@ -1,12 +1,19 @@
 """FastAPI backend and NiceGUI page. One app, both we serve."""
 
+import sys
+import os
+from pathlib import Path
+
+# Add parent directory to path so app module can be imported
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import logging
 import uuid
 import json
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
 from nicegui import ui
 
@@ -76,30 +83,32 @@ def setup_routes(app: FastAPI) -> None:
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     @app.post("/api/pdf/upload")
-    async def upload_pdf(file: UploadFile) -> PDFUploadResponse:
-        """Upload and parse PDF. Knowledge base, populate we do.
+    async def upload_pdf(
+        file: UploadFile,
+        session_id: str | None = Form(None),
+    ) -> PDFUploadResponse:
+        """Upload and parse PDF. Under given session store we do, so chat may use it.
         
         Args:
             file: PDF file upload.
+            session_id: Optional. If provided, PDF context stored under this session; else new one we create.
             
         Returns:
-            Metadata if successful, error if failed.
+            Metadata and session_id if successful, error if failed.
         """
         try:
-            # Status: receiving
             content = await file.read()
-            session_id = str(uuid.uuid4())
+            sid = session_id or str(uuid.uuid4())
 
-            # Status: parsing
             metadata, text = PDFParser.parse(file.filename or "unknown.pdf", content)
 
-            # Store in context
-            current_pdf_context[session_id] = text
-            logger.info(f"PDF parsed: {metadata.filename}, pages: {metadata.pages}")
+            current_pdf_context[sid] = text
+            logger.info(f"PDF parsed: {metadata.filename}, pages: {metadata.pages}, session_id: {sid}")
 
             return PDFUploadResponse(
                 success=True,
                 metadata=metadata,
+                session_id=sid,
             )
         except ValueError as e:
             logger.error(f"PDF upload error: {e}")
@@ -144,18 +153,40 @@ def setup_routes(app: FastAPI) -> None:
         pdf_metadata = ui.label("").classes("text-sm text-gray-700")
 
         async def handle_upload(e):
-            """Handle PDF upload. Parse and store context we do."""
+            """Handle PDF upload. To API send we do; under current session store we must."""
             pdf_status.text = "Uploading..."
+            pdf_metadata.text = ""
             try:
-                # Simulate progress
-                pdf_metadata.text = ""
-
-                # In real app, upload via API
-                # For now, show placeholder
-                pdf_status.text = "✓ Ready for documents"
-                pdf_metadata.text = ""
+                # NiceGUI 3.x: UploadEventArguments has .file (FileUpload), not .content
+                file_upload = getattr(e, "file", None)
+                if not file_upload:
+                    pdf_status.text = "❌ No file in event"
+                    return
+                name = getattr(file_upload, "name", None) or "document.pdf"
+                content = await file_upload.read()
+                if not content:
+                    pdf_status.text = "❌ No file content"
+                    return
+                sid = session_id_input.value or str(uuid.uuid4())
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(
+                        "http://localhost:8000/api/pdf/upload",
+                        files={"file": (name, content, "application/pdf")},
+                        data={"session_id": sid},
+                        timeout=30.0,
+                    )
+                result = resp.json()
+                if result.get("success"):
+                    pdf_status.text = "✓ PDF loaded — ask questions about it below."
+                    meta = result.get("metadata") or {}
+                    pdf_metadata.text = f"{meta.get('filename', name)} — {meta.get('pages', 0)} pages, {meta.get('text_length', 0)} chars"
+                    if result.get("session_id") and not session_id_input.value:
+                        session_id_input.value = result["session_id"]
+                else:
+                    pdf_status.text = f"❌ {result.get('error', 'Upload failed')}"
             except Exception as err:
                 pdf_status.text = f"❌ Error: {err}"
+                logger.exception("Upload failed")
 
         ui.upload(on_upload=handle_upload, auto_upload=True).props("accept=.pdf")
 
@@ -167,18 +198,18 @@ def setup_routes(app: FastAPI) -> None:
         status = ui.label("").classes("text-xs text-amber-600")
 
         # Chat messages display
-        messages_container = ui.column().classes("w-full space-y-2")
+        messages_container = ui.column().classes("w-full space-y-3 max-h-96 overflow-y-auto")
 
         async def display_message(role: str, content: str):
             """Add message to display. UI update we do."""
             with messages_container:
                 if role == "user":
-                    ui.label(f"You: {content}").classes(
-                        "bg-blue-100 p-2 rounded text-sm"
+                    ui.label(content).classes(
+                        "bg-blue-100 p-3 rounded text-sm max-w-full ml-auto mr-0"
                     )
                 else:
-                    ui.label(f"Bot: {content}").classes(
-                        "bg-green-100 p-2 rounded text-sm"
+                    ui.label(content).classes(
+                        "bg-green-100 p-3 rounded text-sm max-w-full"
                     )
 
         # Input and send
@@ -192,10 +223,13 @@ def setup_routes(app: FastAPI) -> None:
             await display_message("user", user_msg)
             message_input.value = ""
 
+            # Create a container for the response that updates as we stream
+            response_text = ""
+            response_label = None
+            
             # Stream response
             try:
                 status.text = "Thinking..."
-                response_label = ui.label("").classes("bg-green-100 p-2 rounded text-sm")
                 
                 # Call the streaming endpoint
                 async with httpx.AsyncClient() as client:
@@ -209,26 +243,41 @@ def setup_routes(app: FastAPI) -> None:
                         json={"message": user_msg, "session_id": session_id},
                         timeout=60.0,
                     ) as response:
-                        response_text = ""
                         async for line in response.aiter_lines():
                             if line.startswith("data: "):
                                 try:
-                                    # Parse SSE format
+                                    # Parse SSE format - use json instead of eval for safety
+                                    import json as json_module
                                     data_str = line[6:]  # Remove "data: " prefix
-                                    # Handle both dict format and escaped format
-                                    data = eval(data_str)  # Safe here since we control the output
+                                    
+                                    # Try to parse as JSON dict
+                                    # Handle both {'key': 'value'} and {"key": "value"}
+                                    try:
+                                        data = json_module.loads(data_str)
+                                    except:
+                                        # Try eval as fallback for single-quoted dicts
+                                        data = eval(data_str)
                                     
                                     if "chunk" in data:
                                         chunk = data["chunk"]
                                         response_text += chunk
-                                        response_label.text = response_text
+                                        
+                                        # Create response label on first chunk
+                                        if response_label is None:
+                                            with messages_container:
+                                                response_label = ui.label(response_text).classes(
+                                                    "bg-green-100 p-3 rounded text-sm max-w-full mr-8"
+                                                )
+                                        else:
+                                            # Update existing label
+                                            response_label.text = response_text
                                     elif "status" in data:
                                         status.text = data["status"]
                                     elif "error" in data:
                                         status.text = f"❌ Error: {data['error']}"
                                         logger.error(f"Stream error: {data['error']}")
                                 except Exception as e:
-                                    logger.error(f"Parse error: {e}")
+                                    logger.debug(f"Parse error: {e}")
                                     continue
                 
                 status.text = "✓ Done"

@@ -40,3 +40,4 @@ class PDFUploadResponse(BaseModel):
     success: bool = Field(..., description="Parse succeeded, or failed it did.")
     metadata: Optional[PDFMetadata] = Field(None, description="File info, if successful.")
     error: Optional[str] = Field(None, description="Error message, if failed it was.")
+    session_id: Optional[str] = Field(None, description="Session under which PDF context is stored.")

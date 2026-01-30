@@ -304,18 +304,22 @@ Defined in `.cursorrules` file at project root:
 ### Current Limitations
 
 1. **In-Memory Session Storage**
+
    - Fine for demo; 100+ concurrent users need Redis or DB.
    - Fix: Replace `_sessions` dict with async cache.
 
 2. **Single PDF per Session**
+
    - Current design: one active document per conversation.
    - Enhancement: multiple PDFs, use vector DB for retrieval (RAG).
 
 3. **No Streaming UI**
+
    - NiceGUI page shows simulated response; real streaming would need JS/Websocket.
    - Fix: Use Fetch API with `ReadableStream` on frontend.
 
 4. **No Authentication**
+
    - Sessions not secure; anyone can access any session.
    - Fix: JWT tokens, secure session storage.
 
@@ -348,26 +352,32 @@ Defined in `.cursorrules` file at project root:
 ## What's Next?
 
 1. **Vector Store for RAG**
+
    - Add FAISS or Pinecone for semantic search.
    - Query: embed user question, retrieve relevant PDF chunks.
 
 2. **Multi-document QA**
+
    - Allow multiple PDFs per session.
    - Improve context selection (don't send all text to LLM).
 
 3. **Persistent Storage**
+
    - Replace in-memory with PostgreSQL + Redis.
    - Conversations persist across sessions.
 
 4. **Real-time Streaming UI**
+
    - WebSocket or Fetch + ReadableStream.
    - Show tokens appearing live, not simulated.
 
 5. **Authentication & RBAC**
+
    - User accounts, session isolation.
    - Role-based access to documents.
 
 6. **Deployment**
+
    - Docker containerization.
    - AWS ECS or Kubernetes.
    - Monitoring and logging (structured JSON logs).

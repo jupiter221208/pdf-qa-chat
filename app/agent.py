@@ -53,10 +53,15 @@ class AgentManager:
         """
         agent = self.get_agent()
 
-        # Build full message with context
+        # Build full message with context. From the PDF alone answer we must, when context we have.
         full_message = message
         if context:
-            full_message = f"Context from knowledge:\n{context}\n\nQuestion: {message}"
+            full_message = (
+                "Answer using only the following document context. "
+                "If the answer is not in the context, say so. Do not invent details.\n\n"
+                f"Document context:\n{context}\n\n"
+                f"Question: {message}"
+            )
 
         # Add to session history if session_id provided
         if session_id:
