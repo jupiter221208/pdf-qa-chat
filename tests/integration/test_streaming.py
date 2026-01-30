@@ -1,9 +1,11 @@
 """Integration tests for streaming and PDF flow. End-to-end, test we do."""
 
-import os
-import pytest
 import asyncio
+import os
 from pathlib import Path
+
+import pytest
+import pytest_check as check
 
 # Note: These tests require a valid OPENAI_API_KEY in .env
 # Run with: pytest tests/integration/
@@ -51,10 +53,10 @@ startxref
 
     try:
         metadata, text = PDFParser.parse("test.pdf", pdf_content)
-        assert metadata.filename == "test.pdf"
-        assert metadata.pages == 1
-        assert metadata.size_bytes == len(pdf_content)
-        assert metadata.text_length > 0
+        check.equal(metadata.filename, "test.pdf")
+        check.equal(metadata.pages, 1)
+        check.equal(metadata.size_bytes, len(pdf_content))
+        check.greater(metadata.text_length, 0)
     except ValueError as e:
         # Expected if PDF parsing fails on invalid structure
         pytest.skip(f"PDF parsing not fully compatible: {e}")
@@ -85,9 +87,9 @@ def test_agent_streaming(monkeypatch):
                 chunks.append(chunk)
 
         # Verify we got multiple chunks (streaming works)
-        assert len(chunks) > 0
+        check.greater(len(chunks), 0)
         full_response = "".join(chunks)
-        assert len(full_response) > 0
+        check.greater(len(full_response), 0)
 
     # Run async test
     try:
@@ -115,10 +117,10 @@ def test_session_persistence(monkeypatch):
 
     # Retrieve session
     history = manager.get_session(session_id)
-    assert len(history) == 2
-    assert history[0]["role"] == "user"
-    assert history[1]["role"] == "assistant"
+    check.equal(len(history), 2)
+    check.equal(history[0]["role"], "user")
+    check.equal(history[1]["role"], "assistant")
 
     # Clear session
     manager.clear_session(session_id)
-    assert len(manager.get_session(session_id)) == 0
+    check.equal(len(manager.get_session(session_id)), 0)
