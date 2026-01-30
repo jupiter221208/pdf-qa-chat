@@ -161,19 +161,31 @@ def setup_routes(app: FastAPI) -> None:
             """
             <style>
                 .pdf-qa-page {
-                    max-width: 720px; margin: 0 auto; padding: 1.5rem;
+                    max-width: 720px; margin: 0 auto; padding: 0.75rem;
                     height: 100vh; max-height: calc(100vh - 2rem); overflow: hidden;
                     display: flex; flex-direction: column; box-sizing: border-box;
                 }
-                .pdf-qa-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.25rem; background: #fff; box-sizing: border-box; }
+                .pdf-qa-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.75rem; background: #fff; box-sizing: border-box; }
                 .pdf-qa-chat-card { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
                 .pdf-qa-scroll-hide {
                     scrollbar-width: none; -ms-overflow-style: none;
                 }
                 .pdf-qa-scroll-hide::-webkit-scrollbar { display: none; }
-                .pdf-qa-chat-bubble-user { background: #2563eb; color: #fff; border-radius: 12px 12px 4px 12px; padding: 0.75rem 1rem; max-width: 85%; margin-left: auto; white-space: pre-wrap; word-break: break-word; }
-                .pdf-qa-chat-bubble-assistant { background: #f1f5f9; color: #1e293b; border-radius: 12px 12px 12px 4px; padding: 0.75rem 1rem; max-width: 85%; border: 1px solid #e2e8f0; white-space: pre-wrap; word-break: break-word; }
-                .pdf-qa-status { font-size: 0.75rem; color: #64748b; padding: 0.25rem 0.5rem; background: #f8fafc; border-radius: 4px; }
+                .pdf-qa-chat-bubble-user { background: #2563eb; color: #fff; border-radius: 12px 12px 4px 12px; padding: 0.5rem 0.75rem; max-width: 85%; margin-left: auto; white-space: pre-wrap; word-break: break-word; }
+                .pdf-qa-chat-bubble-assistant { background: #f1f5f9; color: #1e293b; border-radius: 12px 12px 12px 4px; padding: 0.5rem 0.75rem; max-width: 85%; border: 1px solid #e2e8f0; white-space: pre-wrap; word-break: break-word; }
+                .pdf-qa-chat-bubble-assistant h1, .pdf-qa-chat-bubble-assistant h2, .pdf-qa-chat-bubble-assistant h3,
+                .pdf-qa-chat-bubble-assistant h4, .pdf-qa-chat-bubble-assistant h5, .pdf-qa-chat-bubble-assistant h6 {
+                    margin: 0.35em 0 0.2em 0; font-size: inherit; line-height: 1.3;
+                }
+                .pdf-qa-chat-bubble-assistant p, .pdf-qa-chat-bubble-assistant ul, .pdf-qa-chat-bubble-assistant ol {
+                    margin: 0.2em 0; padding-left: 1.2em;
+                }
+                .pdf-qa-chat-bubble-assistant li { margin: 0.1em 0; }
+                .pdf-qa-chat-bubble-assistant li > p { margin: 0.25em 0 0.1em 0; }
+                .pdf-qa-chat-bubble-assistant li > ul, .pdf-qa-chat-bubble-assistant li > ol {
+                    margin: 0.1em 0 0.25em 0; padding-left: 1.2em;
+                }
+                .pdf-qa-status { font-size: 0.75rem; color: #64748b; padding: 0.2rem 0.4rem; background: #f8fafc; border-radius: 4px; }
                 .pdf-qa-status-done { color: #059669; }
                 .pdf-qa-status-error { color: #dc2626; }
                 .flex-shrink-0 { flex-shrink: 0; }
@@ -185,7 +197,7 @@ def setup_routes(app: FastAPI) -> None:
         )
         with main_container:
             # Header (fixed height)
-            with ui.column().classes("w-full mb-4 flex-shrink-0"):
+            with ui.column().classes("w-full mb-2 flex-shrink-0"):
                 ui.label("PDF QA Chatbot").classes(
                     "text-2xl font-semibold text-slate-800"
                 )
@@ -199,11 +211,11 @@ def setup_routes(app: FastAPI) -> None:
             ).classes("hidden")
 
             # PDF Upload card (fixed height)
-            with ui.column().classes("pdf-qa-card w-full mb-4 flex-shrink-0"):
+            with ui.column().classes("pdf-qa-card w-full mb-2 flex-shrink-0"):
                 ui.label("Document").classes(
-                    "text-sm font-medium text-slate-700 mb-2"
+                    "text-sm font-medium text-slate-700 mb-1"
                 )
-                pdf_status = ui.label("").classes("text-sm text-slate-500 mb-1")
+                pdf_status = ui.label("").classes("text-sm text-slate-500")
                 pdf_metadata = ui.label("").classes("text-xs text-slate-400")
 
                 async def handle_upload(e):
@@ -254,12 +266,12 @@ def setup_routes(app: FastAPI) -> None:
             # Chat card (takes remaining space, no page scrollbar)
             with ui.column().classes("pdf-qa-card pdf-qa-chat-card w-full"):
                 ui.label("Chat").classes(
-                    "text-sm font-medium text-slate-700 mb-2 flex-shrink-0"
+                    "text-sm font-medium text-slate-700 mb-1 flex-shrink-0"
                 )
-                status = ui.label("").classes("pdf-qa-status mb-2 flex-shrink-0")
+                status = ui.label("").classes("pdf-qa-status mb-1 flex-shrink-0")
 
                 messages_container = ui.column().classes(
-                    "w-full space-y-3 overflow-y-auto pdf-qa-scroll-hide"
+                    "w-full space-y-2 overflow-y-auto pdf-qa-scroll-hide"
                 ).style("flex: 1; min-height: 0;")
 
                 def scroll_to_bottom():
@@ -276,15 +288,18 @@ def setup_routes(app: FastAPI) -> None:
                     """)
 
                 async def display_message(role: str, content: str):
-                    """Add message to display. UI update we do."""
+                    """Add message to display. UI update we do. Assistant: markdown we render."""
                     with messages_container:
                         bubble_class = (
                             "pdf-qa-chat-bubble-user" if role == "user" else "pdf-qa-chat-bubble-assistant"
                         )
-                        ui.label(content).classes(bubble_class)
+                        if role == "user":
+                            ui.label(content).classes(bubble_class)
+                        else:
+                            ui.markdown(content or "…").classes(bubble_class)
 
                 # Input row
-                with ui.row().classes("w-full items-end gap-2 mt-2"):
+                with ui.row().classes("w-full items-end gap-2 mt-1"):
                     message_input = ui.input(
                         label="Message",
                         placeholder="Ask about your document…",
@@ -304,7 +319,7 @@ def setup_routes(app: FastAPI) -> None:
 
                         response_text = ""
                         with messages_container:
-                            response_label = ui.label("…").classes(
+                            response_md = ui.markdown("…").classes(
                                 "pdf-qa-chat-bubble-assistant"
                             )
                         scroll_to_bottom()
@@ -326,7 +341,7 @@ def setup_routes(app: FastAPI) -> None:
                                         status.text = "Generating…"
                                         first_chunk = False
                                     response_text += chunk
-                                    response_label.text = response_text if response_text else "…"
+                                    response_md.content = response_text if response_text else "…"
                                     scroll_to_bottom()
                                     await asyncio.sleep(0)
 
@@ -336,7 +351,7 @@ def setup_routes(app: FastAPI) -> None:
                         except Exception as e:
                             status.text = f"Error: {e}"
                             status.classes(add="pdf-qa-status-error")
-                            response_label.text = str(e) if not response_text else response_text
+                            response_md.content = str(e) if not response_text else response_text
                             logger.exception("Chat error")
 
                     message_input.on("keydown.enter", send_message)
