@@ -149,156 +149,191 @@ def setup_routes(app: FastAPI) -> None:
     @ui.page("/")
     def index() -> None:
         """UI page. Chat and upload, facilitate we do."""
-        # Main container with max height 100vh
-        main_container = ui.column().classes("w-full").style("max-height: 100vh; overflow-y: auto;")
+        # Professional layout: centered container, subtle background
+        ui.add_head_html(
+            """
+            <style>
+                .pdf-qa-page {
+                    max-width: 720px; margin: 0 auto; padding: 1.5rem;
+                    height: 100vh; max-height: calc(100vh - 2rem); overflow: hidden;
+                    display: flex; flex-direction: column; box-sizing: border-box;
+                }
+                .pdf-qa-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.25rem; background: #fff; box-sizing: border-box; }
+                .pdf-qa-chat-card { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+                .pdf-qa-scroll-hide {
+                    scrollbar-width: none; -ms-overflow-style: none;
+                }
+                .pdf-qa-scroll-hide::-webkit-scrollbar { display: none; }
+                .pdf-qa-chat-bubble-user { background: #2563eb; color: #fff; border-radius: 12px 12px 4px 12px; padding: 0.75rem 1rem; max-width: 85%; margin-left: auto; white-space: pre-wrap; word-break: break-word; }
+                .pdf-qa-chat-bubble-assistant { background: #f1f5f9; color: #1e293b; border-radius: 12px 12px 12px 4px; padding: 0.75rem 1rem; max-width: 85%; border: 1px solid #e2e8f0; white-space: pre-wrap; word-break: break-word; }
+                .pdf-qa-status { font-size: 0.75rem; color: #64748b; padding: 0.25rem 0.5rem; background: #f8fafc; border-radius: 4px; }
+                .pdf-qa-status-done { color: #059669; }
+                .pdf-qa-status-error { color: #dc2626; }
+                .flex-shrink-0 { flex-shrink: 0; }
+            </style>
+            """
+        )
+        main_container = ui.column().classes("pdf-qa-page w-full").style(
+            "background: #f8fafc;"
+        )
         with main_container:
-            ui.label("📄 PDF QA Chatbot").classes("text-3xl font-bold mb-4")
-            ui.label("Powered by Agno + FastAPI + NiceGUI").classes(
-                "text-gray-600 mb-6"
-            )
+            # Header (fixed height)
+            with ui.column().classes("w-full mb-4 flex-shrink-0"):
+                ui.label("PDF QA Chatbot").classes(
+                    "text-2xl font-semibold text-slate-800"
+                )
+                ui.label("Upload a PDF, then ask questions. Powered by Agno · FastAPI · NiceGUI").classes(
+                    "text-sm text-slate-500"
+                )
 
             # Session ID (hidden)
             session_id_input = ui.input(
                 label="", value=str(uuid.uuid4())
             ).classes("hidden")
 
-            # PDF Upload section
-            ui.label("📋 Upload PDF").classes("text-xl font-semibold mt-4 mb-2")
-            pdf_status = ui.label("").classes("text-sm text-gray-500")
-            pdf_metadata = ui.label("").classes("text-sm text-gray-700")
+            # PDF Upload card (fixed height)
+            with ui.column().classes("pdf-qa-card w-full mb-4 flex-shrink-0"):
+                ui.label("Document").classes(
+                    "text-sm font-medium text-slate-700 mb-2"
+                )
+                pdf_status = ui.label("").classes("text-sm text-slate-500 mb-1")
+                pdf_metadata = ui.label("").classes("text-xs text-slate-400")
 
-            async def handle_upload(e):
-                """Handle PDF upload. To API send we do; under current session store we must."""
-                pdf_status.text = "Uploading..."
-                pdf_metadata.text = ""
-                try:
-                    # NiceGUI 3.x: UploadEventArguments has .file (FileUpload), not .content
-                    file_upload = getattr(e, "file", None)
-                    if not file_upload:
-                        pdf_status.text = "❌ No file in event"
-                        return
-                    name = getattr(file_upload, "name", None) or "document.pdf"
-                    content = await file_upload.read()
-                    if not content:
-                        pdf_status.text = "❌ No file content"
-                        return
-                    sid = session_id_input.value or str(uuid.uuid4())
-                    async with httpx.AsyncClient() as client:
-                        resp = await client.post(
-                            "http://localhost:8000/api/pdf/upload",
-                            files={"file": (name, content, "application/pdf")},
-                            data={"session_id": sid},
-                            timeout=30.0,
+                async def handle_upload(e):
+                    """Handle PDF upload. To API send we do; under current session store we must."""
+                    pdf_status.text = "Uploading…"
+                    pdf_metadata.text = ""
+                    try:
+                        file_upload = getattr(e, "file", None)
+                        if not file_upload:
+                            pdf_status.text = "No file received."
+                            return
+                        name = getattr(file_upload, "name", None) or "document.pdf"
+                        content = await file_upload.read()
+                        if not content:
+                            pdf_status.text = "File is empty."
+                            return
+                        sid = session_id_input.value or str(uuid.uuid4())
+                        async with httpx.AsyncClient() as client:
+                            resp = await client.post(
+                                "http://localhost:8000/api/pdf/upload",
+                                files={"file": (name, content, "application/pdf")},
+                                data={"session_id": sid},
+                                timeout=30.0,
+                            )
+                        result = resp.json()
+                        if result.get("success"):
+                            pdf_status.text = "Document loaded. You can ask questions below."
+                            meta = result.get("metadata") or {}
+                            pdf_metadata.text = (
+                                f"{meta.get('filename', name)} · "
+                                f"{meta.get('pages', 0)} pages · "
+                                f"{meta.get('text_length', 0):,} characters"
+                            )
+                            if result.get("session_id") and not session_id_input.value:
+                                session_id_input.value = result["session_id"]
+                        else:
+                            pdf_status.text = result.get("error", "Upload failed")
+                    except Exception as err:
+                        pdf_status.text = f"Error: {err}"
+                        logger.exception("Upload failed")
+
+                ui.upload(on_upload=handle_upload, auto_upload=True).props(
+                    "accept=.pdf flat bordered"
+                ).classes("w-full")
+
+            # Chat card (takes remaining space, no page scrollbar)
+            with ui.column().classes("pdf-qa-card pdf-qa-chat-card w-full"):
+                ui.label("Chat").classes(
+                    "text-sm font-medium text-slate-700 mb-2 flex-shrink-0"
+                )
+                status = ui.label("").classes("pdf-qa-status mb-2 flex-shrink-0")
+
+                messages_container = ui.column().classes(
+                    "w-full space-y-3 overflow-y-auto pdf-qa-scroll-hide"
+                ).style("flex: 1; min-height: 0;")
+
+                def scroll_to_bottom():
+                    """Scroll chat container to bottom. Latest message, show we must."""
+                    ui.run_javascript("""
+                        setTimeout(() => {
+                            const containers = document.querySelectorAll('.overflow-y-auto');
+                            containers.forEach(container => {
+                                if (container.scrollHeight > container.clientHeight) {
+                                    container.scrollTop = container.scrollHeight;
+                                }
+                            });
+                        }, 10);
+                    """)
+
+                async def display_message(role: str, content: str):
+                    """Add message to display. UI update we do."""
+                    with messages_container:
+                        bubble_class = (
+                            "pdf-qa-chat-bubble-user" if role == "user" else "pdf-qa-chat-bubble-assistant"
                         )
-                    result = resp.json()
-                    if result.get("success"):
-                        pdf_status.text = "✓ PDF loaded — ask questions about it below."
-                        meta = result.get("metadata") or {}
-                        pdf_metadata.text = f"{meta.get('filename', name)} — {meta.get('pages', 0)} pages, {meta.get('text_length', 0)} chars"
-                        if result.get("session_id") and not session_id_input.value:
-                            session_id_input.value = result["session_id"]
-                    else:
-                        pdf_status.text = f"❌ {result.get('error', 'Upload failed')}"
-                except Exception as err:
-                    pdf_status.text = f"❌ Error: {err}"
-                    logger.exception("Upload failed")
+                        ui.label(content).classes(bubble_class)
 
-            ui.upload(on_upload=handle_upload, auto_upload=True).props("accept=.pdf")
+                # Input row
+                with ui.row().classes("w-full items-end gap-2 mt-2"):
+                    message_input = ui.input(
+                        label="Message",
+                        placeholder="Ask about your document…",
+                        on_change=lambda: None,
+                    ).classes("flex-grow")
+                    message_input.props("outlined dense")
 
-            # Chat section
-            ui.separator()
-            ui.label("💬 Chat").classes("text-xl font-semibold mt-4 mb-2")
+                    async def send_message():
+                        """Send message and stream response. Agent we call directly, so no self-request deadlock."""
+                        user_msg = message_input.value.strip()
+                        if not user_msg:
+                            return
 
-            # Status line
-            status = ui.label("").classes("text-xs text-amber-600")
+                        await display_message("user", user_msg)
+                        message_input.value = ""
+                        scroll_to_bottom()
 
-            # Chat messages display
-            messages_container = ui.column().classes("w-full space-y-3 max-h-96 overflow-y-auto")
-            
-            def scroll_to_bottom():
-                """Scroll chat container to bottom. Latest message, show we must."""
-                # Use setTimeout to ensure DOM is updated before scrolling
-                ui.run_javascript("""
-                    setTimeout(() => {
-                        const containers = document.querySelectorAll('.overflow-y-auto');
-                        containers.forEach(container => {
-                            if (container.scrollHeight > container.clientHeight) {
-                                container.scrollTop = container.scrollHeight;
-                            }
-                        });
-                    }, 10);
-                """)
+                        response_text = ""
+                        with messages_container:
+                            response_label = ui.label("…").classes(
+                                "pdf-qa-chat-bubble-assistant"
+                            )
+                        scroll_to_bottom()
 
-            async def display_message(role: str, content: str):
-                """Add message to display. UI update we do."""
-                with messages_container:
-                    if role == "user":
-                        ui.label(content).classes(
-                            "bg-blue-100 p-3 rounded text-sm max-w-full ml-auto mr-0"
-                        )
-                    else:
-                        ui.label(content).classes(
-                            "bg-green-100 p-3 rounded text-sm max-w-full"
-                        )
-
-            # Input and send
-            message_input = ui.input(
-                label="Ask something...", 
-                on_change=lambda: None
-            ).classes("w-full")
-            
-            async def send_message():
-                """Send message and stream response. Agent we call directly, so no self-request deadlock."""
-                user_msg = message_input.value.strip()
-                if not user_msg:
-                    return
-
-                # Show user message
-                await display_message("user", user_msg)
-                message_input.value = ""
-                scroll_to_bottom()
-
-                # Placeholder for assistant reply; we update it as chunks arrive
-                response_text = ""
-                with messages_container:
-                    response_label = ui.label("…").classes(
-                        "bg-green-100 p-3 rounded text-sm max-w-full mr-8"
-                    )
-                scroll_to_bottom()
-
-                try:
-                    # Non-blocking status steps: Received → Searching → Generating → Done
-                    status.text = "Received"
-                    session_id = session_id_input.value or str(uuid.uuid4())
-                    manager = get_manager()
-                    status.text = "Searching..."
-                    await asyncio.sleep(0)
-
-                    # Call agent stream directly (no HTTP to self) so streaming works in same process
-                    first_chunk = True
-                    async for chunk in manager.stream_response(
-                        user_msg, session_id=session_id
-                    ):
-                        if chunk:
-                            if first_chunk:
-                                status.text = "Generating..."
-                                first_chunk = False
-                            response_text += chunk
-                            response_label.text = response_text if response_text else "…"
-                            scroll_to_bottom()
+                        try:
+                            status.classes(remove="pdf-qa-status-done pdf-qa-status-error")
+                            status.text = "Received"
+                            session_id = session_id_input.value or str(uuid.uuid4())
+                            manager = get_manager()
+                            status.text = "Searching…"
                             await asyncio.sleep(0)
 
-                    status.text = "✓ Done"
-                    scroll_to_bottom()
-                except Exception as e:
-                    status.text = f"❌ Error: {e}"
-                    response_label.text = str(e) if not response_text else response_text
-                    logger.exception("Chat error")
-            
-            # Handle Enter key to send message
-            message_input.on("keydown.enter", send_message)
+                            first_chunk = True
+                            async for chunk in manager.stream_response(
+                                user_msg, session_id=session_id
+                            ):
+                                if chunk:
+                                    if first_chunk:
+                                        status.text = "Generating…"
+                                        first_chunk = False
+                                    response_text += chunk
+                                    response_label.text = response_text if response_text else "…"
+                                    scroll_to_bottom()
+                                    await asyncio.sleep(0)
 
-            ui.button("Send", on_click=send_message).classes("mt-2")
+                            status.text = "Done"
+                            status.classes(add="pdf-qa-status-done")
+                            scroll_to_bottom()
+                        except Exception as e:
+                            status.text = f"Error: {e}"
+                            status.classes(add="pdf-qa-status-error")
+                            response_label.text = str(e) if not response_text else response_text
+                            logger.exception("Chat error")
+
+                    message_input.on("keydown.enter", send_message)
+                    ui.button("Send", on_click=send_message).props(
+                        "flat unelevated color=primary"
+                    )
 
     ui.run_with(
         app,
